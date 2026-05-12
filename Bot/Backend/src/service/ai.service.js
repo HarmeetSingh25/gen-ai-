@@ -1,32 +1,56 @@
 import { ChatMistralAI } from "@langchain/mistralai";
+
 import { config } from "../config/config.js";
-import { createAgent } from "langchain";
+
+import { tavilyTool } from "../tool/tavily.tool.js";
+
+import { shouldSearch } from "../utils/shouldSearch.js";
+
+import { SYSTEM_PROMPT } from "../prompts/system.prompt.js";
 
 const model = new ChatMistralAI({
   model: "mistral-medium-latest",
   apiKey: config.MISTRAL_API_KEY,
 });
 
-const agent = createAgent({
-  model,
-  tools: [],
-});
+export async function getStream(messages, latestMessage) {
+  let internetContext = "";
 
-export async function genratedResponse(message) {
-  let response = await model.stream(message);
-  return response.content;
-}
+  if (shouldSearch(latestMessage)) {
+    const results = await tavilyTool(latestMessage);
 
-export async function getStream(messages) {
-  const stream = await agent.stream(
+    internetContext = results
+      .map(
+        (item) => `
+Title: ${item.title}
+
+Content: ${item.content}
+
+URL: ${item.url}
+`,
+      )
+      .join("\n\n");
+  }
+
+  const finalMessages = [
     {
-      messages,
+      role: "system",
+      content: SYSTEM_PROMPT,
     },
+
     {
-      streamMode: "messages",
+      role: "system",
+      content: `
+Realtime internet data:
+
+${internetContext}
+`,
     },
-  );
-  console.log(stream , "ai.service");
-  
+
+    ...messages,
+  ];
+
+  const stream = await model.stream(finalMessages);
+
   return stream;
 }
